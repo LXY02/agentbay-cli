@@ -124,6 +124,10 @@ func (m *mockImageListClient) DescribeOfficeSites(ctx context.Context, request *
 	return nil, fmt.Errorf("not implemented")
 }
 
+func (m *mockImageListClient) DescribeNetworkPackages(ctx context.Context, request *client.DescribeNetworkPackagesRequest) (*client.DescribeNetworkPackagesResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 // Helper functions for testing
 func boolPtr(b bool) *bool {
 	return &b

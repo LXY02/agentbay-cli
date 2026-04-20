@@ -38,6 +38,8 @@ type Client interface {
 	DescribeMcpPolicyData(ctx context.Context, request *client.DescribeMcpPolicyDataRequest) (*client.DescribeMcpPolicyDataResponse, error)
 	SaveMcpPolicyData(ctx context.Context, request *client.SaveMcpPolicyDataRequest) (*client.SaveMcpPolicyDataResponse, error)
 	DescribeOfficeSites(ctx context.Context, request *client.DescribeOfficeSitesRequest) (*client.DescribeOfficeSitesResponse, error)
+	// Network Packages
+	DescribeNetworkPackages(ctx context.Context, request *client.DescribeNetworkPackagesRequest) (*client.DescribeNetworkPackagesResponse, error)
 }
 
 // clientWrapper wraps the generated SDK client with additional functionality
@@ -265,4 +267,13 @@ func (cw *clientWrapper) DescribeOfficeSites(ctx context.Context, request *clien
 		return nil, err
 	}
 	return sdkClient.DescribeOfficeSitesWithContext(ctx, request, cw.getRuntimeOptions())
+}
+
+// DescribeNetworkPackages wraps the SDK client method
+func (cw *clientWrapper) DescribeNetworkPackages(ctx context.Context, request *client.DescribeNetworkPackagesRequest) (*client.DescribeNetworkPackagesResponse, error) {
+	sdkClient, err := cw.getClient()
+	if err != nil {
+		return nil, err
+	}
+	return sdkClient.DescribeNetworkPackagesWithContext(ctx, request, cw.getRuntimeOptions())
 }

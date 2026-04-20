@@ -155,6 +155,27 @@ grep -r "var _ agentbay.Client" cmd/ test/
 - 将相关功能组织为子命令（如 `apikey create`, `apikey concurrency set`）
 - 提供清晰的错误提示和使用示例
 
+### 新增命令必须同步更新 README 和测试用例
+
+**规则**: 每次新增 CLI 命令时，**必须**同步完成以下两项工作：
+
+1. **更新 `agentbay-cli/README.md`**
+   - 在 README 中补充新命令的使用说明
+   - 包含命令描述、参数说明、使用示例
+   - 保持与已有命令文档风格一致
+
+2. **编写单元测试**
+   - 在 `test/unit/cmd/` 下创建对应的测试文件（如 `network_cmd_test.go`）
+   - 测试内容必须覆盖：命令元数据、必填参数校验、子命令结构
+   - 运行 `go test ./... -count=1` 确保全部通过
+
+**检查清单**:
+- [ ] 新命令代码已完成
+- [ ] README.md 已更新，包含新命令的使用文档
+- [ ] 单元测试已编写并通过
+- [ ] mock 类已同步更新（如有接口变更）
+- [ ] `go build` 和 `go test ./...` 均通过
+
 ---
 
 ## 📂 项目结构
