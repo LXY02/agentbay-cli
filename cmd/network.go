@@ -31,29 +31,26 @@ var NetworkPackageCmd = &cobra.Command{
 var networkPackageListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List network packages",
-	Long: `List network packages for a specified user and region.
-
-Both --user-ali-uid and --biz-region-id are required parameters.
+	Long: `List network packages for a specified region.
 
 Examples:
-  # List network packages
-  agentbay network package list --user-ali-uid 1234567890 --biz-region-id cn-hangzhou
+  # List network packages (uses default region cn-hangzhou)
+  agentbay network package list
+
+  # List network packages for a specific region
+  agentbay network package list --biz-region-id cn-shanghai
 
   # List with verbose output
-  agentbay network package list --user-ali-uid 1234567890 --biz-region-id cn-hangzhou -v`,
+  agentbay network package list --biz-region-id cn-hangzhou -v`,
 	RunE: runNetworkPackageList,
 }
 
 var (
-	networkPackageUserAliUid  string
 	networkPackageBizRegionId string
 )
 
 func init() {
-	networkPackageListCmd.Flags().StringVar(&networkPackageUserAliUid, "user-ali-uid", "", "User Ali UID (required)")
-	networkPackageListCmd.Flags().StringVar(&networkPackageBizRegionId, "biz-region-id", "", "Biz Region ID (required)")
-	networkPackageListCmd.MarkFlagRequired("user-ali-uid")
-	networkPackageListCmd.MarkFlagRequired("biz-region-id")
+	networkPackageListCmd.Flags().StringVar(&networkPackageBizRegionId, "biz-region-id", "cn-hangzhou", "Biz Region ID (default: cn-hangzhou)")
 
 	NetworkPackageCmd.AddCommand(networkPackageListCmd)
 	NetworkCmd.AddCommand(NetworkPackageCmd)
@@ -72,7 +69,6 @@ func runNetworkPackageList(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	req := &client.DescribeNetworkPackagesRequest{
-		UserAliUid:  &networkPackageUserAliUid,
 		BizRegionId: &networkPackageBizRegionId,
 	}
 
@@ -118,11 +114,13 @@ func runNetworkPackageList(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\n[OK] Found %d network package(s)\n\n", len(items))
 
 	// Print table header
-	fmt.Printf("%s %s\n",
-		padString("NETWORK PACKAGE ID", 40),
+	fmt.Printf("%s %s %s\n",
+		padString("NETWORK PACKAGE ID", 28),
+		padString("OFFICE SITE ID", 34),
 		"EIP ADDRESSES")
-	fmt.Printf("%s %s\n",
-		padString("------------------", 40),
+	fmt.Printf("%s %s %s\n",
+		padString("------------------", 28),
+		padString("--------------", 34),
 		"-------------")
 
 	// Print table rows
@@ -131,10 +129,12 @@ func runNetworkPackageList(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		networkPackageId := item.GetNetworkPackageId()
+		officeSiteId := item.GetOfficeSiteId()
 		eipAddresses := item.GetEipAddresses()
 
-		fmt.Printf("%s %s\n",
-			padString(truncateString(networkPackageId, 40), 40),
+		fmt.Printf("%s %s %s\n",
+			padString(truncateString(networkPackageId, 28), 28),
+			padString(truncateString(officeSiteId, 34), 34),
 			eipAddresses)
 	}
 

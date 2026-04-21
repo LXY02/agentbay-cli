@@ -1388,9 +1388,6 @@ func (client *Client) DescribeNetworkPackagesWithOptions(request *DescribeNetwor
 		return _result, _err
 	}
 	query := map[string]interface{}{}
-	if !dara.IsNil(request.UserAliUid) {
-		query["UserAliUid"] = request.UserAliUid
-	}
 	if !dara.IsNil(request.BizRegionId) {
 		query["BizRegionId"] = request.BizRegionId
 	}
@@ -1442,9 +1439,6 @@ func (client *Client) DescribeNetworkPackagesWithContext(ctx context.Context, re
 		return _result, _err
 	}
 	query := map[string]interface{}{}
-	if !dara.IsNil(request.UserAliUid) {
-		query["UserAliUid"] = request.UserAliUid
-	}
 	if !dara.IsNil(request.BizRegionId) {
 		query["BizRegionId"] = request.BizRegionId
 	}

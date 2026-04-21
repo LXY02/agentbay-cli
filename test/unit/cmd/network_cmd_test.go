@@ -64,24 +64,7 @@ func TestNetworkPackageListCmd(t *testing.T) {
 		assert.True(t, strings.Contains(listCmd.Long, "network packages"))
 	})
 
-	t.Run("list command has required user-ali-uid flag", func(t *testing.T) {
-		var listCmd *cobra.Command
-		for _, c := range cmd.NetworkPackageCmd.Commands() {
-			if c.Name() == "list" {
-				listCmd = c
-				break
-			}
-		}
-
-		assert.NotNil(t, listCmd)
-
-		flag := listCmd.Flags().Lookup("user-ali-uid")
-		assert.NotNil(t, flag)
-		assert.Equal(t, "", flag.DefValue)
-		assert.True(t, strings.Contains(flag.Usage, "required"))
-	})
-
-	t.Run("list command has required biz-region-id flag", func(t *testing.T) {
+	t.Run("list command has biz-region-id flag with default cn-hangzhou", func(t *testing.T) {
 		var listCmd *cobra.Command
 		for _, c := range cmd.NetworkPackageCmd.Commands() {
 			if c.Name() == "list" {
@@ -94,11 +77,10 @@ func TestNetworkPackageListCmd(t *testing.T) {
 
 		flag := listCmd.Flags().Lookup("biz-region-id")
 		assert.NotNil(t, flag)
-		assert.Equal(t, "", flag.DefValue)
-		assert.True(t, strings.Contains(flag.Usage, "required"))
+		assert.Equal(t, "cn-hangzhou", flag.DefValue)
 	})
 
-	t.Run("list command flags have no default values", func(t *testing.T) {
+	t.Run("list command does not have user-ali-uid flag", func(t *testing.T) {
 		var listCmd *cobra.Command
 		for _, c := range cmd.NetworkPackageCmd.Commands() {
 			if c.Name() == "list" {
@@ -109,12 +91,7 @@ func TestNetworkPackageListCmd(t *testing.T) {
 
 		assert.NotNil(t, listCmd)
 
-		userAliUidFlag := listCmd.Flags().Lookup("user-ali-uid")
-		assert.NotNil(t, userAliUidFlag)
-		assert.Equal(t, "", userAliUidFlag.DefValue)
-
-		bizRegionIdFlag := listCmd.Flags().Lookup("biz-region-id")
-		assert.NotNil(t, bizRegionIdFlag)
-		assert.Equal(t, "", bizRegionIdFlag.DefValue)
+		flag := listCmd.Flags().Lookup("user-ali-uid")
+		assert.Nil(t, flag)
 	})
 }

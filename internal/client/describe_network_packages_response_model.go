@@ -5,6 +5,7 @@ package client
 type DescribeNetworkPackagesResponseBodyDataItem struct {
 	NetworkPackageId *string `json:"NetworkPackageId,omitempty" xml:"NetworkPackageId,omitempty"`
 	EipAddresses     *string `json:"EipAddresses,omitempty" xml:"EipAddresses,omitempty"`
+	OfficeSiteId     *string `json:"OfficeSiteId,omitempty" xml:"OfficeSiteId,omitempty"`
 }
 
 // GetNetworkPackageId returns the NetworkPackageId value or empty string if nil
@@ -21,6 +22,14 @@ func (s *DescribeNetworkPackagesResponseBodyDataItem) GetEipAddresses() string {
 		return ""
 	}
 	return *s.EipAddresses
+}
+
+// GetOfficeSiteId returns the OfficeSiteId value or empty string if nil
+func (s *DescribeNetworkPackagesResponseBodyDataItem) GetOfficeSiteId() string {
+	if s == nil || s.OfficeSiteId == nil {
+		return ""
+	}
+	return *s.OfficeSiteId
 }
 
 // DescribeNetworkPackagesResponseBodyData represents the Data field in the response
