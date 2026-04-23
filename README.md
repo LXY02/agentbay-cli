@@ -4,7 +4,7 @@ A command-line interface for AgentBay services.
 
 ## Features
 
-AgentBay CLI provides image management, API key management, and skills management:
+AgentBay CLI provides image management, API key management, network management, and skills management:
 
 **Note**: The current version of the CLI tool supports creating and activating CodeSpace type images only.
 
@@ -15,6 +15,7 @@ AgentBay CLI provides image management, API key management, and skills managemen
 - **Image Listing**: Browse user and system images with separated display, pagination and filtering support
 - **Image Status**: Query resource lifecycle status for an image by ID (`agentbay image status`)
 - **API Key Management**: Create API keys and configure session concurrency limits for authentication and access control
+- **Network Management**: Query network packages by region, view package details including EIP addresses and office site bindings
 - **Skills**: Push local skills and show skill details by ID (`skills list` is a placeholder until the backend list API is available)
 - **Configuration Management**: Secure token storage and automatic token refresh
 
@@ -57,6 +58,10 @@ agentbay image status imgc-xxxxx...xxx
 agentbay apikey create --name "my-api-key"                        # Create a new API key
 agentbay apikey concurrency set --api-key-id ak-xxx --concurrency 10  # Set concurrency limit
 
+# Network Management (optional)
+agentbay network package list                              # List network packages (default region: cn-hangzhou)
+agentbay network package list --biz-region-id cn-shanghai  # List for a specific region
+
 # Skills (optional; directory or .zip with SKILL.md frontmatter; list is a placeholder)
 agentbay skills push ./my-skill
 agentbay skills push ./my-skill.zip
@@ -73,6 +78,7 @@ agentbay skills show <skill-id>              # Show skill details
 - Image activation uses default resource configuration if `--cpu` and `--memory` are not specified. CPU and memory must be specified together.
 - Advanced network type (`--network-type ADVANCED`) requires `--session-bandwidth` and `--dns-address` parameters.
 - API keys require account real-name verification before creation. Each API key must have a unique name.
+- Network package list uses `cn-hangzhou` as the default region. Use `--biz-region-id` to query other regions.
 
 For detailed usage instructions and examples, see the [User Guide](docs/USER_GUIDE.md) .
 

@@ -88,6 +88,10 @@ func (m *mockGetMcpImageInfoClient) DescribeOfficeSites(ctx context.Context, req
 	return nil, fmt.Errorf("not implemented")
 }
 
+func (m *mockGetMcpImageInfoClient) DescribeNetworkPackages(ctx context.Context, request *client.DescribeNetworkPackagesRequest) (*client.DescribeNetworkPackagesResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 var _ agentbay.Client = (*mockGetMcpImageInfoClient)(nil)
 
 func TestInferImageTypeFromImageID(t *testing.T) {

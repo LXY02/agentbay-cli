@@ -37,6 +37,7 @@ func init() {
 	rootCmd.AddCommand(cmd.ImageCmd)
 	rootCmd.AddCommand(cmd.SkillsCmd)
 	rootCmd.AddCommand(cmd.ApiKeyCmd)
+	rootCmd.AddCommand(cmd.NetworkCmd)
 
 	// Global flags
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
