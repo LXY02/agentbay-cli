@@ -128,6 +128,14 @@ func (m *mockImageListClient) DescribeNetworkPackages(ctx context.Context, reque
 	return nil, fmt.Errorf("not implemented")
 }
 
+func (m *mockImageListClient) CreateMcpPolicyData(ctx context.Context, request *client.CreateModifyMcpPolicyDataRequest) (*client.CreateMcpPolicyDataResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockImageListClient) ModifyMcpPolicyData(ctx context.Context, request *client.CreateModifyMcpPolicyDataRequest) (*client.ModifyMcpPolicyDataResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 // Helper functions for testing
 func boolPtr(b bool) *bool {
 	return &b

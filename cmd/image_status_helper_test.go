@@ -92,6 +92,14 @@ func (m *mockGetMcpImageInfoClient) DescribeNetworkPackages(ctx context.Context,
 	return nil, fmt.Errorf("not implemented")
 }
 
+func (m *mockGetMcpImageInfoClient) CreateMcpPolicyData(ctx context.Context, request *client.CreateModifyMcpPolicyDataRequest) (*client.CreateMcpPolicyDataResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockGetMcpImageInfoClient) ModifyMcpPolicyData(ctx context.Context, request *client.CreateModifyMcpPolicyDataRequest) (*client.ModifyMcpPolicyDataResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 var _ agentbay.Client = (*mockGetMcpImageInfoClient)(nil)
 
 func TestInferImageTypeFromImageID(t *testing.T) {

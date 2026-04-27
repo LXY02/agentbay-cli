@@ -187,6 +187,10 @@ func init() {
 	imageActivateCmd.Flags().String("network-type", "DEFAULT", "Network type: DEFAULT or ADVANCED (default: DEFAULT)")
 	imageActivateCmd.Flags().Int("session-bandwidth", 0, "Session bandwidth in Mbps (only for ADVANCED network)")
 	imageActivateCmd.Flags().StringArray("dns-address", []string{}, "DNS addresses (only for ADVANCED network, can be specified multiple times)")
+	imageActivateCmd.Flags().String("lifecycle-mode", "", "Sandbox release mode: auto or manual (optional)")
+	imageActivateCmd.Flags().Float64("lifecycle-max-runtime", 0, "Maximum runtime in hours for the sandbox (optional, maps to DesktopMaxRuntime)")
+	imageActivateCmd.Flags().Float64("lifecycle-hibernate", 0, "Hibernate timeout in hours (optional, maps to HibernateTimeout)")
+	imageActivateCmd.Flags().Float64("lifecycle-idle-timeout", 0, "User idle timeout in hours (optional, maps to UserIdleTimeout)")
 
 	// Add flags to image list command
 	imageListCmd.Flags().StringP("os-type", "o", "", "Filter by OS type: Linux, Android, or Windows (optional)")
@@ -1075,6 +1079,23 @@ func runImageActivate(cmd *cobra.Command, args []string) error {
 	sessionBandwidth, _ := cmd.Flags().GetInt("session-bandwidth")
 	dnsAddresses, _ := cmd.Flags().GetStringArray("dns-address")
 
+	// Parse lifecycle parameters
+	lifecycleMode, _ := cmd.Flags().GetString("lifecycle-mode")
+	lifecycleMaxRuntime, _ := cmd.Flags().GetFloat64("lifecycle-max-runtime")
+	lifecycleHibernate, _ := cmd.Flags().GetFloat64("lifecycle-hibernate")
+	lifecycleIdleTimeout, _ := cmd.Flags().GetFloat64("lifecycle-idle-timeout")
+
+	// Detect which lifecycle flags were explicitly set by the user
+	lifecycleModeSet := cmd.Flags().Changed("lifecycle-mode")
+	lifecycleMaxRuntimeSet := cmd.Flags().Changed("lifecycle-max-runtime")
+	lifecycleHibernateSet := cmd.Flags().Changed("lifecycle-hibernate")
+	lifecycleIdleTimeoutSet := cmd.Flags().Changed("lifecycle-idle-timeout")
+
+	// Validate lifecycle-mode
+	if lifecycleModeSet && lifecycleMode != "auto" && lifecycleMode != "manual" {
+		return fmt.Errorf("[ERROR] Invalid lifecycle-mode: %s. Must be auto or manual", lifecycleMode)
+	}
+
 	// Validate network type
 	if networkType != "DEFAULT" && networkType != "ADVANCED" {
 		return fmt.Errorf("[ERROR] Invalid network type: %s. Must be DEFAULT or ADVANCED", networkType)
@@ -1175,6 +1196,18 @@ func runImageActivate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cannot activate image in current state: %s", TranslateImageResourceStatus(imageInfo.ResourceStatus))
 	}
 
+	// Build lifecycle params struct to pass to handlers
+	lifecycleParams := &lifecycleFlags{
+		mode:           lifecycleMode,
+		maxRuntime:     lifecycleMaxRuntime,
+		hibernate:      lifecycleHibernate,
+		idleTimeout:    lifecycleIdleTimeout,
+		modeSet:        lifecycleModeSet,
+		maxRuntimeSet:  lifecycleMaxRuntimeSet,
+		hibernateSet:   lifecycleHibernateSet,
+		idleTimeoutSet: lifecycleIdleTimeoutSet,
+	}
+
 	var appInstanceType string
 
 	// Handle network-specific flow - must be done BEFORE CreateResourceGroup
@@ -1182,13 +1215,13 @@ func runImageActivate(cmd *cobra.Command, args []string) error {
 	var effectiveDnsAddresses []string
 	if networkType == "ADVANCED" && shouldCreateResourceGroup {
 		var err error
-		appInstanceType, err = getAppInstanceType(statusCtx, apiClient, imageId, cpu, memory)
+		appInstanceType, err = getAppInstanceType(statusCtx, apiClient, imageId, cpu, memory, 7)
 		if err != nil {
 			return err
 		}
 
-		// DescribeMcpPolicyData + DescribeOfficeSites + SaveMcpPolicyData BEFORE CreateResourceGroup
-		_, effectiveDnsAddresses, err = handleAdvancedNetworkActivation(statusCtx, apiClient, imageId, appInstanceType, cpu, memory, sessionBandwidth, dnsAddresses)
+		// DescribeMcpPolicyData + Create/ModifyMcpPolicyData + DescribeOfficeSites + SaveMcpPolicyData BEFORE CreateResourceGroup
+		_, effectiveDnsAddresses, err = handleAdvancedNetworkActivation(statusCtx, apiClient, imageId, appInstanceType, cpu, memory, sessionBandwidth, dnsAddresses, lifecycleParams, imageInfo.OsName)
 		if err != nil {
 			return err
 		}
@@ -1197,13 +1230,13 @@ func runImageActivate(cmd *cobra.Command, args []string) error {
 	// Handle DEFAULT network flow - must be done BEFORE CreateResourceGroup
 	if networkType == "DEFAULT" && shouldCreateResourceGroup {
 		var err error
-		appInstanceType, err = getAppInstanceType(statusCtx, apiClient, imageId, cpu, memory)
+		appInstanceType, err = getAppInstanceType(statusCtx, apiClient, imageId, cpu, memory, 6)
 		if err != nil {
 			return err
 		}
 
-		// DescribeMcpPolicyData + SaveMcpPolicyData BEFORE CreateResourceGroup
-		err = handleDefaultNetworkActivation(statusCtx, apiClient, imageId, appInstanceType, cpu, memory)
+		// DescribeMcpPolicyData + Create/ModifyMcpPolicyData + SaveMcpPolicyData BEFORE CreateResourceGroup
+		err = handleDefaultNetworkActivation(statusCtx, apiClient, imageId, appInstanceType, cpu, memory, lifecycleParams, imageInfo.OsName)
 		if err != nil {
 			return err
 		}
@@ -1211,13 +1244,12 @@ func runImageActivate(cmd *cobra.Command, args []string) error {
 
 	// Create resource group if needed
 	if shouldCreateResourceGroup {
-		// STEP numbering depends on network type:
-		// ADVANCED: STEP 1=DescribeInstanceTypes, STEP 2=DescribeMcpPolicyData, STEP 3=DescribeOfficeSites, STEP 4=SaveMcpPolicyData, STEP 5=CreateResourceGroup, STEP 6=Polling
-		// DEFAULT: STEP 1=DescribeInstanceTypes, STEP 2=DescribeMcpPolicyData, STEP 3=SaveMcpPolicyData, STEP 4=CreateResourceGroup, STEP 5=Polling
+		// ADVANCED: STEP 1=DescribeInstanceTypes, STEP 2=DescribeMcpPolicyData, STEP 3=Create/ModifyMcpPolicyData, STEP 4=DescribeOfficeSites, STEP 5=SaveMcpPolicyData, STEP 6=CreateResourceGroup, STEP 7=Polling
+		// DEFAULT: STEP 1=DescribeInstanceTypes, STEP 2=DescribeMcpPolicyData, STEP 3=Create/ModifyMcpPolicyData, STEP 4=SaveMcpPolicyData, STEP 5=CreateResourceGroup, STEP 6=Polling
 		if networkType == "ADVANCED" {
-			fmt.Printf("[STEP 5/6] Creating resource group...")
+			fmt.Printf("[STEP 6/7] Creating resource group...")
 		} else {
-			fmt.Printf("[STEP 4/5] Creating resource group...")
+			fmt.Printf("[STEP 5/6] Creating resource group...")
 		}
 		createReq := &client.CreateResourceGroupRequest{
 			ImageId: dara.String(imageId),
@@ -1319,7 +1351,7 @@ func runImageActivate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Poll for activation completion (STEP 6/6 for ADVANCED, STEP 5/5 for DEFAULT)
+	// Poll for activation completion (STEP 7/7 for ADVANCED, STEP 6/6 for DEFAULT)
 	fmt.Printf("Waiting for activation to complete...\n")
 	pollingCtx := context.Background() // Don't use timeout context, polling has its own timeout
 	pollingConfig := DefaultActivatePollingConfig()
@@ -1753,9 +1785,138 @@ func isDockerfileValidationError(taskMsg string) bool {
 	return strings.Contains(taskMsg, validationErrorMsg)
 }
 
+// lifecycleFlags holds parsed lifecycle CLI flag values and their "changed" status.
+type lifecycleFlags struct {
+	mode           string
+	maxRuntime     float64
+	hibernate      float64
+	idleTimeout    float64
+	modeSet        bool
+	maxRuntimeSet  bool
+	hibernateSet   bool
+	idleTimeoutSet bool
+}
+
+// mergeSandboxLifeCycle merges user-specified lifecycle params with existing SandboxLifeCycle from DescribeMcpPolicyData.
+func mergeSandboxLifeCycle(existing *client.SandboxLifeCycle, lf *lifecycleFlags) *client.SandboxLifeCycle {
+	result := &client.SandboxLifeCycle{}
+
+	// 1. Copy existing values as base
+	if existing != nil {
+		result.Mode = existing.Mode
+		result.HibernateTimeout = existing.HibernateTimeout
+		result.DesktopMaxRuntime = existing.DesktopMaxRuntime
+		result.UserIdleTimeout = existing.UserIdleTimeout
+		result.IdleTimeoutSwitch = existing.IdleTimeoutSwitch
+	}
+
+	// 2. User-specified values override
+	if lf.modeSet {
+		result.Mode = dara.String(lf.mode)
+	}
+	if lf.maxRuntimeSet {
+		result.DesktopMaxRuntime = dara.Float64(lf.maxRuntime)
+	}
+	if lf.hibernateSet {
+		result.HibernateTimeout = dara.Float64(lf.hibernate)
+	}
+	if lf.idleTimeoutSet {
+		result.UserIdleTimeout = dara.Float64(lf.idleTimeout)
+	}
+
+	// 3. IdleTimeoutSwitch linked to UserIdleTimeout
+	// If UserIdleTimeout has a value (including 0) -> true, otherwise false
+	if result.UserIdleTimeout != nil {
+		result.IdleTimeoutSwitch = dara.Bool(true)
+	} else {
+		result.IdleTimeoutSwitch = dara.Bool(false)
+	}
+
+	return result
+}
+
+// handlePolicyDataCreateOrModify calls CreateMcpPolicyData or ModifyMcpPolicyData
+// based on IsDefaultData from DescribeMcpPolicyData response.
+func handlePolicyDataCreateOrModify(
+	ctx context.Context,
+	apiClient agentbay.Client,
+	imageId string,
+	policyData *client.DescribeMcpPolicyDataResponseBodyData,
+	mergedSandboxLifeCycle *client.SandboxLifeCycle,
+	osName string,
+	stepNum, totalSteps int,
+) error {
+	isDefaultData := policyData.IsDefaultData != nil && *policyData.IsDefaultData
+
+	actionName := "ModifyMcpPolicyData"
+	if isDefaultData {
+		actionName = "CreateMcpPolicyData"
+	}
+
+	fmt.Printf("[STEP %d/%d] %s...", stepNum, totalSteps, actionName)
+
+	req := &client.CreateModifyMcpPolicyDataRequest{
+		ImageId:               dara.String(imageId),
+		SandboxLifeCycle:      mergedSandboxLifeCycle,
+		NetworkConfig:         policyData.NetworkConfig,
+		DisplayConfig:         policyData.DisplayConfig,
+		BusinessType:          dara.Int32(1),
+		ResourceType:          dara.String("AIAgent"),
+		DisconnectKeepSession: dara.String("persistent"),
+		Name:                  dara.String(fmt.Sprintf("policy-%s", time.Now().Format("20060102-15:04:05"))),
+	}
+
+	// ScreenSettings flattened
+	if policyData.ScreenSettings != nil {
+		req.Taskbar = policyData.ScreenSettings.Taskbar
+		req.ScreenDisplayMode = policyData.ScreenSettings.ScreenDisplayMode
+		req.ClientControlMenu = policyData.ScreenSettings.ClientControlMenu
+	}
+
+	// RegionName from GroupSpec.RegionId
+	if policyData.GroupSpec != nil {
+		req.RegionName = policyData.GroupSpec.RegionId
+	}
+
+	// OsName-dependent fields
+	if osName == "Android" {
+		req.InternetCommunicationProtocol = dara.String("rtc")
+		req.ResolutionWidth = dara.Int32(1080)
+		req.ResolutionHeight = dara.Int32(1920)
+	} else {
+		req.InternetCommunicationProtocol = dara.String("auto")
+	}
+
+	if isDefaultData {
+		resp, err := apiClient.CreateMcpPolicyData(ctx, req)
+		if err != nil {
+			fmt.Printf(" Failed.\n")
+			return fmt.Errorf("failed to create policy data: %w", err)
+		}
+		if resp.Body != nil && resp.Body.GetRequestId() != nil {
+			fmt.Printf(" Done. (Action: CreateMcpPolicyData, Request ID: %s)\n", *resp.Body.GetRequestId())
+		} else {
+			fmt.Printf(" Done. (Action: CreateMcpPolicyData)\n")
+		}
+	} else {
+		resp, err := apiClient.ModifyMcpPolicyData(ctx, req)
+		if err != nil {
+			fmt.Printf(" Failed.\n")
+			return fmt.Errorf("failed to modify policy data: %w", err)
+		}
+		if resp.Body != nil && resp.Body.GetRequestId() != nil {
+			fmt.Printf(" Done. (Action: ModifyMcpPolicyData, Request ID: %s)\n", *resp.Body.GetRequestId())
+		} else {
+			fmt.Printf(" Done. (Action: ModifyMcpPolicyData)\n")
+		}
+	}
+
+	return nil
+}
+
 // getAppInstanceType queries DescribeInstanceTypes to get AppInstanceType for given cpu and memory
-func getAppInstanceType(ctx context.Context, apiClient agentbay.Client, imageId string, cpu, memory int) (string, error) {
-	fmt.Printf("[STEP 1/6] Querying instance types...")
+func getAppInstanceType(ctx context.Context, apiClient agentbay.Client, imageId string, cpu, memory int, totalSteps int) (string, error) {
+	fmt.Printf("[STEP 1/%d] Querying instance types...", totalSteps)
 	instanceTypesReq := &client.DescribeInstanceTypesRequest{
 		ImageId: dara.String(imageId),
 	}
@@ -1807,11 +1968,11 @@ func getAppInstanceType(ctx context.Context, apiClient agentbay.Client, imageId 
 }
 
 // handleAdvancedNetworkActivation handles the advanced network activation flow
-// Flow: DescribeMcpPolicyData -> DescribeOfficeSites -> SaveMcpPolicyData
+// Flow: DescribeMcpPolicyData -> Create/ModifyMcpPolicyData -> DescribeOfficeSites -> SaveMcpPolicyData
 // Returns: policyId, effectiveDnsAddresses (default from DescribeOfficeSites if user not specified), error
-func handleAdvancedNetworkActivation(ctx context.Context, apiClient agentbay.Client, imageId, appInstanceType string, cpu, memory, sessionBandwidth int, dnsAddresses []string) (string, []string, error) {
+func handleAdvancedNetworkActivation(ctx context.Context, apiClient agentbay.Client, imageId, appInstanceType string, cpu, memory, sessionBandwidth int, dnsAddresses []string, lf *lifecycleFlags, osName string) (string, []string, error) {
 	// Step 1: DescribeMcpPolicyData - Get policy data
-	fmt.Printf("[STEP 2/6] Fetching policy data...")
+	fmt.Printf("[STEP 2/7] Fetching policy data...")
 	policyReq := &client.DescribeMcpPolicyDataRequest{
 		ImageId: dara.String(imageId),
 	}
@@ -1838,9 +1999,23 @@ func handleAdvancedNetworkActivation(ctx context.Context, apiClient agentbay.Cli
 		regionName = *policyResp.Body.Data.GroupSpec.RegionId
 	}
 
-	// Step 2: DescribeOfficeSites - Query office network to get default DNS addresses
+	// Merge SandboxLifeCycle
+	var existingSandboxLifeCycle *client.SandboxLifeCycle
+	if policyResp.Body != nil && policyResp.Body.Data != nil {
+		existingSandboxLifeCycle = policyResp.Body.Data.SandboxLifeCycle
+	}
+	mergedSandboxLifeCycle := mergeSandboxLifeCycle(existingSandboxLifeCycle, lf)
+
+	// Step 2: Create/ModifyMcpPolicyData
+	if policyResp.Body != nil && policyResp.Body.Data != nil {
+		if err := handlePolicyDataCreateOrModify(ctx, apiClient, imageId, policyResp.Body.Data, mergedSandboxLifeCycle, osName, 3, 7); err != nil {
+			return "", nil, err
+		}
+	}
+
+	// Step 3: DescribeOfficeSites - Query office network to get default DNS addresses
 	var defaultDnsAddresses []string
-	fmt.Printf("[STEP 3/6] Querying office network...")
+	fmt.Printf("[STEP 4/7] Querying office network...")
 	if regionName != "" {
 		officeSiteReq := &client.DescribeOfficeSitesRequest{
 			OfficeSiteType: dara.String("ADVANCED"),
@@ -1873,8 +2048,8 @@ func handleAdvancedNetworkActivation(ctx context.Context, apiClient agentbay.Cli
 		fmt.Printf("[INFO] Using default DNS addresses from office network: %s\n", strings.Join(effectiveDnsAddresses, ", "))
 	}
 
-	// Step 3: SaveMcpPolicyData - Save updated policy data
-	fmt.Printf("[STEP 4/6] Saving policy configuration...")
+	// Step 4: SaveMcpPolicyData - Save updated policy data
+	fmt.Printf("[STEP 5/7] Saving policy configuration...")
 	saveReq := &client.SaveMcpPolicyDataRequest{}
 
 	// Copy existing data
@@ -1898,8 +2073,8 @@ func handleAdvancedNetworkActivation(ctx context.Context, apiClient agentbay.Cli
 			}
 		}
 
-		// Copy other sections
-		saveReq.SandboxLifeCycle = data.SandboxLifeCycle
+		// Copy other sections - use merged SandboxLifeCycle
+		saveReq.SandboxLifeCycle = mergedSandboxLifeCycle
 		saveReq.ScreenSettings = data.ScreenSettings
 		saveReq.NetworkConfig = data.NetworkConfig
 		saveReq.DisplayConfig = data.DisplayConfig
@@ -1943,11 +2118,11 @@ func handleAdvancedNetworkActivation(ctx context.Context, apiClient agentbay.Cli
 }
 
 // handleDefaultNetworkActivation handles the DEFAULT network activation flow
-// Flow: DescribeMcpPolicyData -> SaveMcpPolicyData
+// Flow: DescribeMcpPolicyData -> Create/ModifyMcpPolicyData -> SaveMcpPolicyData
 // Returns: error
-func handleDefaultNetworkActivation(ctx context.Context, apiClient agentbay.Client, imageId, appInstanceType string, cpu, memory int) error {
+func handleDefaultNetworkActivation(ctx context.Context, apiClient agentbay.Client, imageId, appInstanceType string, cpu, memory int, lf *lifecycleFlags, osName string) error {
 	// Step 1: DescribeMcpPolicyData - Get policy data
-	fmt.Printf("[STEP 2/5] Fetching policy data...")
+	fmt.Printf("[STEP 2/6] Fetching policy data...")
 	policyReq := &client.DescribeMcpPolicyDataRequest{
 		ImageId: dara.String(imageId),
 	}
@@ -1963,8 +2138,22 @@ func handleDefaultNetworkActivation(ctx context.Context, apiClient agentbay.Clie
 		fmt.Printf(" Done. (Action: DescribeMcpPolicyData)\n")
 	}
 
-	// Step 2: SaveMcpPolicyData - Save updated policy data with DEFAULT network settings
-	fmt.Printf("[STEP 3/5] Saving policy configuration...")
+	// Merge SandboxLifeCycle
+	var existingSandboxLifeCycle *client.SandboxLifeCycle
+	if policyResp.Body != nil && policyResp.Body.Data != nil {
+		existingSandboxLifeCycle = policyResp.Body.Data.SandboxLifeCycle
+	}
+	mergedSandboxLifeCycle := mergeSandboxLifeCycle(existingSandboxLifeCycle, lf)
+
+	// Step 2: Create/ModifyMcpPolicyData
+	if policyResp.Body != nil && policyResp.Body.Data != nil {
+		if err := handlePolicyDataCreateOrModify(ctx, apiClient, imageId, policyResp.Body.Data, mergedSandboxLifeCycle, osName, 3, 6); err != nil {
+			return err
+		}
+	}
+
+	// Step 3: SaveMcpPolicyData - Save updated policy data with DEFAULT network settings
+	fmt.Printf("[STEP 4/6] Saving policy configuration...")
 	saveReq := &client.SaveMcpPolicyDataRequest{}
 
 	// Copy existing data
@@ -1988,8 +2177,8 @@ func handleDefaultNetworkActivation(ctx context.Context, apiClient agentbay.Clie
 			}
 		}
 
-		// Copy other sections
-		saveReq.SandboxLifeCycle = data.SandboxLifeCycle
+		// Copy other sections - use merged SandboxLifeCycle
+		saveReq.SandboxLifeCycle = mergedSandboxLifeCycle
 		saveReq.ScreenSettings = data.ScreenSettings
 		saveReq.NetworkConfig = data.NetworkConfig
 		saveReq.DisplayConfig = data.DisplayConfig

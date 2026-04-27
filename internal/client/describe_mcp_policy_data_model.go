@@ -60,7 +60,8 @@ func (s *ScreenSettings) String() string {
 
 // SandboxLifeCycle - 沙箱生命周期
 type SandboxLifeCycle struct {
-	IdleTimeoutSwitch *bool   `json:"IdleTimeoutSwitch,omitempty" xml:"IdleTimeoutSwitch,omitempty"`
+	Mode              *string  `json:"Mode,omitempty" xml:"Mode,omitempty"` // "auto" or "manual"
+	IdleTimeoutSwitch *bool    `json:"IdleTimeoutSwitch,omitempty" xml:"IdleTimeoutSwitch,omitempty"`
 	HibernateTimeout  *float64 `json:"HibernateTimeout,omitempty" xml:"HibernateTimeout,omitempty"`
 	DesktopMaxRuntime *float64 `json:"DesktopMaxRuntime,omitempty" xml:"DesktopMaxRuntime,omitempty"`
 	UserIdleTimeout   *float64 `json:"UserIdleTimeout,omitempty" xml:"UserIdleTimeout,omitempty"`
@@ -121,11 +122,11 @@ func (s *DescribeMcpPolicyDataResponseBodyData) String() string {
 
 // DescribeMcpPolicyDataResponseBody - 响应体
 type DescribeMcpPolicyDataResponseBody struct {
-	RequestId      string                              `json:"RequestId,omitempty" xml:"RequestId,omitempty"`
-	HttpStatusCode *int32                              `json:"HttpStatusCode,omitempty" xml:"HttpStatusCode,omitempty"`
+	RequestId      string                                 `json:"RequestId,omitempty" xml:"RequestId,omitempty"`
+	HttpStatusCode *int32                                 `json:"HttpStatusCode,omitempty" xml:"HttpStatusCode,omitempty"`
 	Data           *DescribeMcpPolicyDataResponseBodyData `json:"Data,omitempty" xml:"Data,omitempty"`
-	Code           *string                             `json:"Code,omitempty" xml:"Code,omitempty"`
-	Success        *bool                               `json:"Success,omitempty" xml:"Success,omitempty"`
+	Code           *string                                `json:"Code,omitempty" xml:"Code,omitempty"`
+	Success        *bool                                  `json:"Success,omitempty" xml:"Success,omitempty"`
 }
 
 func (s *DescribeMcpPolicyDataResponseBody) String() string {
@@ -154,10 +155,10 @@ func (s *DescribeMcpPolicyDataResponseBody) GetSuccess() *bool {
 
 // DescribeMcpPolicyDataResponse - 响应
 type DescribeMcpPolicyDataResponse struct {
-	Headers    map[string]*string               `json:"headers,omitempty" xml:"headers,omitempty"`
-	StatusCode *int32                           `json:"statusCode,omitempty" xml:"statusCode,omitempty"`
+	Headers    map[string]*string                 `json:"headers,omitempty" xml:"headers,omitempty"`
+	StatusCode *int32                             `json:"statusCode,omitempty" xml:"statusCode,omitempty"`
 	Body       *DescribeMcpPolicyDataResponseBody `json:"body,omitempty" xml:"body,omitempty"`
-	RawBody    string                           `json:"-"` // Store raw body for debugging
+	RawBody    string                             `json:"-"` // Store raw body for debugging
 }
 
 func (s DescribeMcpPolicyDataResponse) String() string {
