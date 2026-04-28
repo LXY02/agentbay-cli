@@ -47,7 +47,7 @@ The image will be built from the specified Dockerfile and based on the provided 
 Examples:
   # Create an image with a custom Dockerfile
   agentbay image create my-custom-image --dockerfile ./Dockerfile --imageId code_latest
-  
+
   # Short form
   agentbay image create my-image -f ./Dockerfile -i code_latest`,
 	Args: cobra.ExactArgs(1),
@@ -64,22 +64,22 @@ their details including image ID, name, type, and description.
 
 OS types:
   Linux   - Linux-based images
-  Android - Android-based images  
+  Android - Android-based images
   Windows - Windows-based images
 
 Examples:
   # List user images (default)
   agentbay image list
-  
+
   # Include system images
   agentbay image list --include-system
-  
+
   # Show only system images
   agentbay image list --system-only
-  
+
   # List Linux images only
   agentbay image list --os-type Linux
-  
+
   # List images with pagination
   agentbay image list --page 2 --size 5`,
 	RunE: runImageList,
@@ -90,11 +90,11 @@ var imageActivateCmd = &cobra.Command{
 	Short: "Activate a User image",
 	Long: `Activate a User image to make it available for use.
 
-This command creates a resource group for the specified User image, making it 
+This command creates a resource group for the specified User image, making it
 available for deployment. Only User type images can be activated.
 
-CPU and memory must be specified together. Available combinations depend on 
-the image and are determined by the backend. If you specify an unsupported 
+CPU and memory must be specified together. Available combinations depend on
+the image and are determined by the backend. If you specify an unsupported
 combination, the command will show available options.
 
 If no CPU/memory is specified, the default configuration will be used.
@@ -117,13 +117,13 @@ var imageDeactivateCmd = &cobra.Command{
 	Short: "Deactivate an activated User image",
 	Long: `Deactivate an activated User image to stop its resource group.
 
-This command deletes the resource group for the specified User image, making it 
+This command deletes the resource group for the specified User image, making it
 unavailable for deployment. Only activated User type images can be deactivated.
 
 Examples:
   # Deactivate a user image
   agentbay image deactivate imgc-xxxxxxxxxxxxxx
-  
+
   # Deactivate with verbose output
   agentbay image deactivate imgc-xxxxxxxxxxxxxx --verbose`,
 	Args: cobra.ExactArgs(1),
@@ -135,13 +135,13 @@ var imageInitCmd = &cobra.Command{
 	Short: "Download a Dockerfile template from the cloud",
 	Long: `Download a Dockerfile template from the cloud to the local root directory.
 
-This command fetches a Dockerfile template from AgentBay and saves it as 'Dockerfile' 
+This command fetches a Dockerfile template from AgentBay and saves it as 'Dockerfile'
 in the current directory. The source image ID must be specified via --sourceImageId flag.
 
 Examples:
   # Download Dockerfile template with source image ID
   agentbay image init --sourceImageId code-space-debian-12
-  
+
   # Short form
   agentbay image init -i code-space-debian-12`,
 	Args: cobra.NoArgs,
@@ -360,84 +360,114 @@ func runImageCreate(cmd *cobra.Command, args []string) error {
 			}
 			files = append(files, fileItem{absPath: absPath, relPath: relPath})
 		}
+
 		const maxConcurrent = 10
-		sem := make(chan struct{}, maxConcurrent)
-		var credsMu sync.Mutex
-		creds := make(map[string]string)
-		var firstCredErr error
-		var credWg sync.WaitGroup
-		fmt.Printf("Requesting upload credentials for %d files (parallel)...\n", len(files))
-		for _, f := range files {
-			f := f
-			credWg.Add(1)
-			go func() {
-				defer credWg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				credReq := &client.GetDockerFileStoreCredentialRequest{
-					Source:       &sourceAgentBay,
-					FilePath:     &f.relPath,
-					IsDockerfile: dara.String("false"),
-					TaskId:       taskId,
-				}
-				resp, err := apiClient.GetDockerFileStoreCredential(ctx, credReq)
-				if err != nil {
-					credsMu.Lock()
-					if firstCredErr == nil {
-						firstCredErr = fmt.Errorf("failed to get upload credentials for %s: %w", f.relPath, err)
-					}
-					credsMu.Unlock()
-					return
-				}
-				if resp.Body == nil || resp.Body.Data == nil {
-					credsMu.Lock()
-					if firstCredErr == nil {
-						firstCredErr = fmt.Errorf("invalid response: missing upload credentials for %s", f.relPath)
-					}
-					credsMu.Unlock()
-					return
-				}
-				ossUrl := resp.Body.Data.GetOssUrl()
-				if ossUrl == nil || *ossUrl == "" {
-					credsMu.Lock()
-					if firstCredErr == nil {
-						firstCredErr = fmt.Errorf("invalid response: missing OSS URL for %s", f.relPath)
-					}
-					credsMu.Unlock()
-					return
-				}
-				credsMu.Lock()
-				creds[f.absPath] = *ossUrl
-				credsMu.Unlock()
-			}()
+		const maxUploadRounds = 3
+
+		type failedFile struct {
+			file fileItem
+			err  error
 		}
-		credWg.Wait()
-		if firstCredErr != nil {
-			return fmt.Errorf("[ERROR] %w", firstCredErr)
-		}
-		var firstUploadErr error
-		var uploadWg sync.WaitGroup
-		fmt.Printf("Uploading %d files (parallel)...\n", len(files))
-		for _, f := range files {
-			f := f
-			ossUrl := creds[f.absPath]
-			uploadWg.Add(1)
-			go func() {
-				defer uploadWg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				if err := uploadFileToOSS(f.absPath, ossUrl); err != nil {
-					credsMu.Lock()
-					if firstUploadErr == nil {
-						firstUploadErr = fmt.Errorf("failed to upload %s: %w", f.relPath, err)
+
+		pendingFiles := append([]fileItem{}, files...)
+		var allSucceeded []fileItem
+		// lastFailures keeps the error details from the final round for summary reporting.
+		var lastFailures []failedFile
+
+		for round := 1; round <= maxUploadRounds && len(pendingFiles) > 0; round++ {
+			if round > 1 {
+				fmt.Printf("\n[RETRY] Retrying %d failed file(s) (attempt %d/%d)...\n", len(pendingFiles), round, maxUploadRounds)
+			}
+
+			sem := make(chan struct{}, maxConcurrent)
+			var mu sync.Mutex
+			var succeeded []fileItem
+			var failures []failedFile
+			var wg sync.WaitGroup
+
+			fmt.Printf("Uploading %d file(s) (parallel, get credential then upload)...\n", len(pendingFiles))
+			for _, f := range pendingFiles {
+				f := f
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+
+					// Step 1: Get credential for this file
+					credReq := &client.GetDockerFileStoreCredentialRequest{
+						Source:       &sourceAgentBay,
+						FilePath:     &f.relPath,
+						IsDockerfile: dara.String("false"),
+						TaskId:       taskId,
 					}
-					credsMu.Unlock()
-				}
-			}()
+					resp, err := apiClient.GetDockerFileStoreCredential(ctx, credReq)
+					if err != nil {
+						mu.Lock()
+						failures = append(failures, failedFile{file: f, err: fmt.Errorf("get credentials failed: %w", err)})
+						mu.Unlock()
+						return
+					}
+					if resp.Body == nil || resp.Body.Data == nil {
+						mu.Lock()
+						failures = append(failures, failedFile{file: f, err: fmt.Errorf("invalid response: missing credentials")})
+						mu.Unlock()
+						return
+					}
+					ossUrl := resp.Body.Data.GetOssUrl()
+					if ossUrl == nil || *ossUrl == "" {
+						mu.Lock()
+						failures = append(failures, failedFile{file: f, err: fmt.Errorf("invalid response: missing OSS URL")})
+						mu.Unlock()
+						return
+					}
+
+					// Step 2: Upload immediately after getting credential
+					if err := uploadFileToOSS(f.absPath, *ossUrl); err != nil {
+						mu.Lock()
+						failures = append(failures, failedFile{file: f, err: err})
+						mu.Unlock()
+					} else {
+						mu.Lock()
+						succeeded = append(succeeded, f)
+						mu.Unlock()
+					}
+				}()
+			}
+			wg.Wait()
+
+			// Print per-file results for this round
+			for _, f := range succeeded {
+				fmt.Printf("  \u2705 %s\n", f.relPath)
+			}
+			for _, r := range failures {
+				fmt.Printf("  \u274c %s (%v)\n", r.file.relPath, r.err)
+			}
+
+			allSucceeded = append(allSucceeded, succeeded...)
+
+			// Collect failed files for next round
+			pendingFiles = nil
+			lastFailures = nil
+			for _, r := range failures {
+				pendingFiles = append(pendingFiles, r.file)
+				lastFailures = append(lastFailures, r)
+			}
 		}
-		uploadWg.Wait()
-		if firstUploadErr != nil {
-			return fmt.Errorf("[ERROR] %w", firstUploadErr)
+
+		// Print upload summary
+		fmt.Printf("\n[UPLOAD] Upload complete: %d/%d succeeded", len(allSucceeded), len(files))
+		if len(pendingFiles) > 0 {
+			fmt.Printf(", %d/%d failed", len(pendingFiles), len(files))
+		}
+		fmt.Printf("\n")
+
+		if len(pendingFiles) > 0 {
+			fmt.Printf("[UPLOAD] ❌ Failed files after %d attempt(s):\n", maxUploadRounds)
+			for _, r := range lastFailures {
+				fmt.Printf("  - %s: %v\n", r.file.relPath, r.err)
+			}
+			return fmt.Errorf("[ERROR] %d file(s) failed to upload after %d attempts", len(pendingFiles), maxUploadRounds)
 		}
 		fmt.Printf(" Done.\n")
 	}
