@@ -243,6 +243,7 @@ func (client *Client) SaveMcpPolicyDataWithOptions(request *SaveMcpPolicyDataReq
 	}
 	if request.SandboxLifeCycle != nil {
 		body["SandboxLifeCycle"] = marshalNested(map[string]interface{}{
+			"Mode":              request.SandboxLifeCycle.Mode,
 			"IdleTimeoutSwitch": request.SandboxLifeCycle.IdleTimeoutSwitch,
 			"HibernateTimeout":  request.SandboxLifeCycle.HibernateTimeout,
 			"DesktopMaxRuntime": request.SandboxLifeCycle.DesktopMaxRuntime,

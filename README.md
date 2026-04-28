@@ -48,6 +48,9 @@ agentbay image activate imgc-xxxxx...xxx --cpu 2 --memory 4
 # Activate with advanced network configuration
 agentbay image activate imgc-xxxxx...xxx --network-type ADVANCED --session-bandwidth 100 --dns-address 8.8.8.8 --dns-address 8.8.4.4
 
+# Activate with sandbox lifecycle parameters
+agentbay image activate imgc-xxxxx...xxx --lifecycle-mode auto --lifecycle-max-runtime 3600 --lifecycle-hibernate 1800 --lifecycle-idle-timeout 600
+
 # 6. Deactivate when done
 agentbay image deactivate imgc-xxxxx...xxx
 
@@ -68,21 +71,22 @@ agentbay skills push ./my-skill.zip
 agentbay skills show <skill-id>              # Show skill details
 ```
 
-**Note**: 
+**Note**:
+
 - With both OAuth tokens and AccessKey env set, the CLI prefers AccessKey for API calls.
 - System images are always available and don't require activation. Only user-created images need to be activated before use.
 - When downloading Dockerfile templates, the first N lines (N is returned by the system) are system-defined and cannot be modified. Only modify content after line N+1.
-- Available sourceImageID for production environment: 
-`code-space-debian-12`
-`code-space-debian-12-enhanced`.
+- Available sourceImageID for production environment:
+  `code-space-debian-12`
+  `code-space-debian-12-enhanced`.
 - Image activation uses default resource configuration if `--cpu` and `--memory` are not specified. CPU and memory must be specified together.
 - Advanced network type (`--network-type ADVANCED`) requires `--session-bandwidth` and `--dns-address` parameters.
+- Sandbox lifecycle parameters (`--lifecycle-mode`, `--lifecycle-max-runtime`, `--lifecycle-hibernate`, `--lifecycle-idle-timeout`) are optional and override existing policy values. `--lifecycle-mode` accepts `auto` or `manual`.
 - API keys require account real-name verification before creation. Each API key must have a unique name.
 - Network package list uses `cn-hangzhou` as the default region. Use `--biz-region-id` to query other regions.
 
 For detailed usage instructions and examples, see the [User Guide](docs/USER_GUIDE.md) .
 
-
 ## License
 
-This project is licensed under the Apache License 2.0 - see the LICENSE file for details. 
+This project is licensed under the Apache License 2.0 - see the LICENSE file for details.

@@ -158,6 +158,7 @@ func DefaultDeactivatePollingConfig() PollingConfig {
 type ImageInfo struct {
 	ResourceStatus string // IMAGE_AVAILABLE, RESOURCE_PUBLISHED, etc.
 	ImageType      string // User or System
+	OsName         string // Linux, Android, Windows, etc.
 }
 
 // GetImageInfo retrieves the current status and type for the given image ID
@@ -210,6 +211,11 @@ func GetImageInfo(ctx context.Context, apiClient agentbay.Client, imageId string
 
 	if info.ImageType == "" && resp.Body.Data.ImageInfo != nil && resp.Body.Data.ImageInfo.ImageType != nil {
 		info.ImageType = dara.StringValue(resp.Body.Data.ImageInfo.ImageType)
+	}
+
+	// Extract OsName from ImageInfo
+	if resp.Body.Data.ImageInfo != nil && resp.Body.Data.ImageInfo.OsName != nil {
+		info.OsName = dara.StringValue(resp.Body.Data.ImageInfo.OsName)
 	}
 
 	// Match `image list` bucketing when the API omits ImageType on the JSON path
